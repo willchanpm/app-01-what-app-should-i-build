@@ -4,9 +4,17 @@ import { Redis } from '@upstash/redis';
 import { Ratelimit } from '@upstash/ratelimit';
 import { headers } from 'next/headers';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization function for OpenAI client
+// This prevents the client from being created during build time when env vars might not be available
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY environment variable is not set');
+  }
+  return new OpenAI({
+    apiKey: apiKey,
+  });
+}
 
 // Create a new Redis client
 const redis = new Redis({
@@ -60,6 +68,9 @@ export async function POST(request: Request) {
     }
 
     const { vibe = 1 } = await request.json();
+    
+    // Initialize OpenAI client only when needed (lazy initialization)
+    const openai = getOpenAIClient();
     
     const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
