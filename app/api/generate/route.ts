@@ -51,7 +51,17 @@ export async function POST(request: Request) {
     const ip = headersList.get('x-forwarded-for') || 'anonymous';
     
     // Check rate limit
-    const { success, limit, reset, remaining } = await ratelimit.limit(ip);
+    let rateLimit;
+    try {
+      rateLimit = await ratelimit.limit(ip);
+    } catch (error) {
+      console.error('Rate-limit service unavailable:', error);
+      return NextResponse.json(
+        { error: 'The generator is temporarily unavailable. Please try again later.' },
+        { status: 503, headers: { 'Retry-After': '60' } }
+      );
+    }
+    const { success, limit, reset, remaining } = rateLimit;
     
     if (!success) {
       return NextResponse.json(

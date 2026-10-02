@@ -27,11 +27,14 @@ export default function Home() {
         body: JSON.stringify({ vibe }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to generate idea");
-      }
-
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate idea. Please try again.");
+      }
+      if (typeof data.type !== "string" || !data.type.trim() ||
+          typeof data.purpose !== "string" || !data.purpose.trim()) {
+        throw new Error("The generator returned an incomplete idea. Please try again.");
+      }
 
       let count = 0;
       const maxSpins = 10;
@@ -61,7 +64,7 @@ export default function Home() {
 
       spin();
     } catch (err) {
-      setError("Failed to generate idea. Please try again.");
+      setError(err instanceof Error ? err.message : "Failed to generate idea. Please try again.");
       setIsGenerating(false);
     }
   };
@@ -120,6 +123,8 @@ export default function Home() {
         </button>
       </div>
 
+      {error && <p role="alert" className="text-red-400 text-center mt-4">{error}</p>}
+
       {(appType || purpose) && (
         <div className="bg-slate-900 rounded-xl p-4 md:p-8 shadow-inner border border-slate-700/50 max-w-3xl w-full">
           <div className="flex flex-col items-center gap-4 md:gap-6 text-xl md:text-4xl text-white text-center">
@@ -153,7 +158,6 @@ export default function Home() {
               </motion.div>
             </div>
           </div>
-          {error && <p className="text-red-400 text-center mt-4">{error}</p>}
         </div>
       )}
     </div>
