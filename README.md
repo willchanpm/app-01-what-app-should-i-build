@@ -1,7 +1,7 @@
 # App Idea Generator
 
 A creative tool that generates app ideas using AI, with adjustable creativity levels.
-Built with Next.js, Tailwind CSS, and OpenAI's GPT-3.5.
+Built with Next.js, Tailwind CSS, and OpenAI's GPT-5.6 Luna.
 
 ## Features
 
@@ -13,7 +13,7 @@ Built with Next.js, Tailwind CSS, and OpenAI's GPT-3.5.
   - Crazy: Over-the-top, unconventional concepts
 - ✨ **Animated Interface**: Smooth transitions and visual feedback
 - 🎨 **Modern Design**: Clean, responsive UI with a dark theme
-- 🤖 **AI-Powered**: Leverages OpenAI's GPT-3.5 for intelligent suggestions
+- 🤖 **AI-Powered**: Uses OpenAI's GPT-5.6 Luna for intelligent suggestions
 
 ## Getting Started
 
@@ -27,8 +27,8 @@ Built with Next.js, Tailwind CSS, and OpenAI's GPT-3.5.
 1. Clone the repository:
 
 ```bash
-git clone <repository-url>
-cd 01-what-app-should-i-build
+git clone https://github.com/willchanpm/app-01-what-app-should-i-build.git
+cd app-01-what-app-should-i-build
 ```
 
 2. Install dependencies:
@@ -82,5 +82,11 @@ This project is licensed under the MIT License - see the
 ## Acknowledgments
 
 - Built as part of the #30Days30Apps challenge
-- Powered by OpenAI's GPT-3.5
+- Powered by OpenAI's GPT-5.6 Luna
 - Inspired by the developer community's need for app ideas
+
+## Operating this demo
+
+Redis and application rate limiting are intentionally not used. Only `OPENAI_API_KEY` is required; old `UPSTASH_*` environment variables are ignored. Requests use a fixed prompt, validated creativity levels, GPT-5.6 Luna with reasoning disabled, a 100-token output cap, and a 20-second timeout without automatic retries. Monitor API usage because the endpoint is public.
+
+Run `node tests/generate.cjs` for mocked API regression checks and `npm run build` to validate a production build.

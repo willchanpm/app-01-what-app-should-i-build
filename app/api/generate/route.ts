@@ -1,33 +1,5 @@
 import OpenAI from 'openai';
 import { NextResponse } from 'next/server';
-import { Redis } from '@upstash/redis';
-import { Ratelimit } from '@upstash/ratelimit';
-import { headers } from 'next/headers';
-
-// Lazy initialization function for OpenAI client
-// This prevents the client from being created during build time when env vars might not be available
-function getOpenAIClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error('OPENAI_API_KEY environment variable is not set');
-  }
-  return new OpenAI({
-    apiKey: apiKey,
-  });
-}
-
-// Create a new Redis client
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL || '',
-  token: process.env.UPSTASH_REDIS_REST_TOKEN || '',
-});
-
-// Create a new ratelimiter that allows 10 requests per 10 minutes
-const ratelimit = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(10, '10 m'),
-  analytics: true,
-});
 
 const getVibePrompt = (vibe: number) => {
   switch (vibe) {
@@ -45,86 +17,47 @@ const getVibePrompt = (vibe: number) => {
 };
 
 export async function POST(request: Request) {
+  let body;
   try {
-    // Get IP for rate limiting
-    const headersList = headers();
-    const ip = headersList.get('x-forwarded-for') || 'anonymous';
-    
-    // Check rate limit
-    let rateLimit;
-    try {
-      rateLimit = await ratelimit.limit(ip);
-    } catch (error) {
-      console.error('Rate-limit service unavailable:', error);
-      return NextResponse.json(
-        { error: 'The generator is temporarily unavailable. Please try again later.' },
-        { status: 503, headers: { 'Retry-After': '60' } }
-      );
-    }
-    const { success, limit, reset, remaining } = rateLimit;
-    
-    if (!success) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Please try again later.' },
-        { 
-          status: 429,
-          headers: {
-            'X-RateLimit-Limit': limit.toString(),
-            'X-RateLimit-Remaining': remaining.toString(),
-            'X-RateLimit-Reset': reset.toString()
-          }
-        }
-      );
-    }
-
-    const { vibe = 1 } = await request.json();
-    
-    // Initialize OpenAI client only when needed (lazy initialization)
-    const openai = getOpenAIClient();
-    
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content: `You are an app idea generator. ${getVibePrompt(vibe)} Format your response exactly like this example: "fitness|helps you track daily workouts" or "shopping|finds the best local deals". The type must be a single word, and the purpose must start with a verb. Use British spelling. Do not include any other text or formatting.`
-        },
-        {
-          role: "user",
-          content: "Generate an app idea"
-        }
-      ],
-      temperature: 0.9,
-      max_tokens: 50,
-    });
-
-    const response = completion.choices[0].message.content?.trim();
-    
-    if (!response) {
-      throw new Error('Empty response from OpenAI');
-    }
-
-    const parts = response.split('|');
-    if (parts.length !== 2) {
-      console.error('Invalid format received:', response);
-      throw new Error('Response not in type|purpose format');
-    }
-
-    const [type, purpose] = parts;
-    if (!type?.trim() || !purpose?.trim()) {
-      console.error('Missing type or purpose:', { type, purpose });
-      throw new Error('Missing type or purpose in response');
-    }
-
-    return NextResponse.json({
-      type: type.trim(),
-      purpose: purpose.trim()
-    });
-  } catch (error) {
-    console.error('Error generating idea:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate app idea. Please try again.' },
-      { status: 500 }
-    );
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON request.' }, { status: 400 });
   }
-} 
+  const vibe = body?.vibe ?? 1;
+  if (!Number.isInteger(vibe) || vibe < 0 || vibe > 3) {
+    return NextResponse.json({ error: 'Choose a creativity level from 0 to 3.' }, { status: 400 });
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ error: 'The generator is temporarily unavailable.' }, { status: 503 });
+  }
+  try {
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      timeout: 20_000,
+      maxRetries: 0,
+    });
+    const completion = await openai.responses.create({
+      model: 'gpt-5.6-luna',
+      reasoning: { effort: 'none' },
+      max_output_tokens: 100,
+      store: false,
+      instructions: `You generate short app ideas. ${getVibePrompt(vibe)} Return exactly one idea as type|purpose, for example fitness|helps you track daily workouts. The type must be one word, and the purpose must start with a verb. Use British spelling and Oxford commas. Keep the purpose under 20 words. Do not add other text or formatting.`,
+      input: 'Generate an app idea.',
+    });
+    const parts = completion.output_text?.trim().split('|');
+    if (completion.status !== 'completed' || parts?.length !== 2 || !parts.every(part => part.trim())) {
+      return NextResponse.json({ error: 'The generator returned an incomplete idea. Please try again.' }, { status: 502 });
+    }
+    return NextResponse.json({ type: parts[0].trim(), purpose: parts[1].trim() });
+  } catch (error) {
+    const status = error instanceof OpenAI.APIError ? error.status : undefined;
+    console.error('Idea generation failed', { status });
+    const timedOut = error instanceof OpenAI.APIConnectionTimeoutError;
+    return NextResponse.json({ error: timedOut
+      ? 'Generation took too long. Please try again.'
+      : status === 429
+        ? 'The AI service is busy or its quota has been reached. Please try again later.'
+        : 'Failed to generate an app idea. Please try again.'
+    }, { status: timedOut ? 504 : status === 429 ? 429 : 502 });
+  }
+}
